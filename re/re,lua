@@ -1,59 +1,111 @@
 repeat task.wait(1) until game:IsLoaded()
+print("🔧 Prison Life Networked Builder запущен")
 
-local player = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Удаляем старый GUI
-if CoreGui:FindFirstChild("SimpleBuilder") then
-    CoreGui.SimpleBuilder:Destroy()
+if CoreGui:FindFirstChild("NetworkBuilder") then
+    CoreGui.NetworkBuilder:Destroy()
 end
 
 -- Создаем интерфейс
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SimpleBuilder"
+ScreenGui.Name = "NetworkBuilder"
 ScreenGui.Parent = CoreGui
 ScreenGui.ResetOnSpawn = false
 
--- Кнопка создания
-local CreateBtn = Instance.new("TextButton")
-CreateBtn.Name = "CreateBtn"
-CreateBtn.Size = UDim2.new(0, 200, 0, 60)
-CreateBtn.Position = UDim2.new(0.5, -100, 0, 20)
-CreateBtn.AnchorPoint = Vector2.new(0.5, 0)
-CreateBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
-CreateBtn.Text = "СОЗДАТЬ БЛОК"
-CreateBtn.TextSize = 18
-CreateBtn.TextColor3 = Color3.new(1, 1, 1)
-CreateBtn.Parent = ScreenGui
+-- Функция создания кнопки
+local function createBtn(name, pos, size, text)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(0, size.X, 0, size.Y)
+    btn.Position = UDim2.new(0, pos.X, 0, pos.Y)
+    btn.BackgroundColor3 = Color3.fromRGB(80, 100, 180)
+    btn.BorderSizePixel = 0
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextSize = 16
+    btn.ZIndex = 1000
+    btn.Parent = ScreenGui
+    return btn
+end
 
--- Основная функция
-CreateBtn.MouseButton1Click:Connect(function()
-    local character = player.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        local hrp = character.HumanoidRootPart
+-- Кнопки
+local buttons = {
+    createBtn("CreateBtn", Vector2.new(20, 50), Vector2.new(200, 60), "🌐 СОЗДАТЬ БЛОК"),
+    createBtn("DeleteBtn", Vector2.new(20, 120), Vector2.new(200, 50), "❌ УДАЛИТЬ БЛОК")
+}
+
+local currentPart = nil
+
+-- Ключевая функция: синхронизация через RemoteEvent
+local function syncPartToServer(part)
+    local remoteName = "PartSync_"..player.UserId
+    local remote = ReplicatedStorage:FindFirstChild(remoteName)
+    
+    if not remote then
+        remote = Instance.new("RemoteEvent")
+        remote.Name = remoteName
+        remote.Parent = ReplicatedStorage
+    end
+    
+    remote:FireServer({
+        action = "create",
+        size = part.Size,
+        position = part.Position,
+        color = part.BrickColor.Name,
+        material = part.Material.Name
+    })
+end
+
+buttons.CreateBtn.MouseButton1Click:Connect(function()
+    local char = player.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    -- Расчет позиции
+    local offset = hrp.CFrame.LookVector * 8
+    local spawnPos = hrp.Position + Vector3.new(offset.X, 3, offset.Z)
+    
+    -- Создаем локальный объект
+    currentPart = Instance.new("Part")
+    currentPart.Name = "PlayerPlatform_"..player.UserId
+    currentPart.Size = Vector3.new(10, 2, 10)
+    currentPart.Position = spawnPos
+    currentPart.Anchored = true
+    currentPart.CanCollide = true
+    currentPart.BrickColor = BrickColor.new("Bright blue")
+    currentPart.Material = Enum.Material.Neon
+    currentPart.Transparency = 0.2
+    currentPart.Parent = workspace
+    
+    -- Синхронизируем с сервером
+    syncPartToServer(currentPart)
+    
+    -- Уведомление
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "СИНХРОНИЗАЦИЯ",
+        Text = "Объект отправлен на сервер",
+        Duration = 3
+    })
+end)
+
+buttons.DeleteBtn.MouseButton1Click:Connect(function()
+    if currentPart then 
+        -- Уведомляем сервер об удалении
+        local remote = ReplicatedStorage:FindFirstChild("PartSync_"..player.UserId)
+        if remote then
+            remote:FireServer({action = "delete"})
+        end
         
-        -- Создаем объект
-        local part = Instance.new("Part")
-        part.Name = "PlayerPart_"..player.Name
-        part.Size = Vector3.new(5, 5, 5)
-        part.Position = hrp.Position + Vector3.new(0, 10, 0)
-        part.Anchored = true
-        part.CanCollide = true
-        part.BrickColor = BrickColor.new("Bright red")
-        part.Material = Enum.Material.Neon
-        part.Parent = workspace
-        
-        -- Уведомление
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "УСПЕХ!",
-            Text = "Блок создан над вами",
-            Duration = 3
-        })
-        
-        print("✅ Блок создан: "..tostring(part))
-    else
-        warn("❌ Персонаж не найден!")
+        currentPart:Destroy()
+        currentPart = nil
     end
 end)
 
-print("🚀 Скрипт активирован! Кнопка создания доступна")
+print("✅ Система синхронизации активирована")
